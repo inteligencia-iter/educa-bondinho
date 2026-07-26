@@ -221,11 +221,16 @@ function openNameModal() {
   const overlay = document.getElementById('name-modal-overlay');
   const select = document.getElementById('name-modal-select');
   const input = document.getElementById('name-modal-input');
+  const skipBtn = document.getElementById('name-modal-skip');
 
   // reseta o select pra evitar duplicar as opções toda vez que o modal reabre
   select.innerHTML = '<option value="">Selecione seu nome...</option>';
   input.hidden = true;
   input.value = '';
+
+  // se já existe um nome salvo, o botão de "escape" vira "Cancelar" (mantém o nome atual);
+  // só no primeiro acesso (sem nome ainda) ele oferece seguir anônimo de fato
+  skipBtn.textContent = currentUserName ? 'Cancelar' : 'Continuar sem nome';
 
   const roster = (typeof TEAM_MEMBERS !== 'undefined' && TEAM_MEMBERS.length) ? TEAM_MEMBERS : [];
   roster.forEach(name => {
