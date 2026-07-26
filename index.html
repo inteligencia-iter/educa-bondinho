@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitor - Educa Bondinho</title>
+<link rel="icon" type="image/x-icon" href="https://iter.com.br/favicon.ico">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css" />
+
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-left">
+    <img class="brand-mark" src="https://iter.com.br/favicon.ico" alt="Grupo Iter" width="48" height="48">
+    <div class="brand-text">
+      <span class="brand-eyebrow">GRUPO ITER · INTELIGÊNCIA DE MERCADO</span>
+      <h1>Educa Bondinho</h1>
+      <span class="brand-sub">Monitor Comercial de Escolas Particulares — RJ</span>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button class="tab-btn active" data-tab="mapa">Mapa</button>
+    <button class="tab-btn" data-tab="leads">Leads</button>
+    <button class="tab-btn" data-tab="followup">Follow Up</button>
+    <button class="tab-btn" data-tab="rejeitados">Rejeitados / Sem Resposta</button>
+  </nav>
+  <div class="header-right">
+    <span class="sync-status" id="sync-status" title="Status de sincronização">● local</span>
+    <button id="btn-export" class="btn-ghost" title="Exportar progresso (checks e follow-up) em arquivo JSON">⬇ Exportar</button>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ===================== MAPA ===================== -->
+  <section class="tab-panel active" id="panel-mapa">
+    <aside class="filters-bar">
+      <div class="filter-group">
+        <label>Nível de visualização</label>
+        <div class="segmented" id="level-selector">
+          <button class="seg-btn active" data-level="municipio">Município do Rio</button>
+          <button class="seg-btn" data-level="metropolitana">Região Metropolitana</button>
+          <button class="seg-btn" data-level="estado">Estado do RJ</button>
+        </div>
+      </div>
+
+      <div class="filter-group" id="subfilter-group">
+        <label id="subfilter-label">Zona</label>
+        <select id="mapa-subfilter">
+          <option value="">Todas</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>Modalidade de ensino</label>
+        <div class="multiselect" id="modalidade-filter-mapa">
+          <button class="multiselect-toggle">Todas as modalidades ▾</button>
+          <div class="multiselect-panel"></div>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <label>Escolas contactadas</label>
+        <select id="contacted-filter-mapa">
+          <option value="todas">Mostrar todas</option>
+          <option value="somente">Mostrar contactadas</option>
+          <option value="ocultar">Ocultar contactadas</option>
+        </select>
+      </div>
+
+      <div class="filter-group stats" id="mapa-stats"></div>
+    </aside>
+
+    <div class="map-wrap">
+      <div id="map"></div>
+      <button class="legend-toggle" id="legend-toggle" title="Mostrar/ocultar legenda">Legenda</button>
+      <div class="map-legend" id="map-legend"></div>
+    </div>
+  </section>
+
+  <!-- ===================== LEADS ===================== -->
+  <section class="tab-panel" id="panel-leads">
+    <aside class="filters-bar">
+      <div class="filter-group">
+        <label>Buscar escola</label>
+        <input type="text" id="search-leads" placeholder="Nome da escola...">
+      </div>
+
+      <div class="filter-group">
+        <label>Região do Estado</label>
+        <select id="filter-regiao-estado">
+          <option value="">Todas</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>Zona (Município do Rio)</label>
+        <select id="filter-zona">
+          <option value="">Todas</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>Modalidade de ensino</label>
+        <div class="multiselect" id="modalidade-filter-leads">
+          <button class="multiselect-toggle">Todas as modalidades ▾</button>
+          <div class="multiselect-panel"></div>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <label>Escolas contactadas</label>
+        <select id="contacted-filter-leads">
+          <option value="todas">Mostrar todas</option>
+          <option value="somente">Mostrar contactadas</option>
+          <option value="ocultar">Ocultar contactadas</option>
+        </select>
+      </div>
+
+      <div class="filter-group stats" id="leads-stats"></div>
+    </aside>
+
+    <div class="leads-list-wrap">
+      <table class="leads-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Escola</th>
+            <th>Município</th>
+            <th>Modalidades</th>
+            <th>Telefone</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="leads-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===================== FOLLOW UP ===================== -->
+  <section class="tab-panel" id="panel-followup">
+    <div class="followup-header">
+      <p>Escolas entram aqui automaticamente assim que forem marcadas como <strong>contactadas</strong> no Mapa ou em Leads. Arraste o card para a próxima etapa, ou use o menu de ações.</p>
+      <div class="followup-search">
+        <input type="text" id="search-followup" placeholder="Buscar escola no funil...">
+      </div>
+    </div>
+    <div class="kanban" id="kanban-board"></div>
+  </section>
+
+  <!-- ===================== REJEITADOS ===================== -->
+  <section class="tab-panel" id="panel-rejeitados">
+    <div class="rejeitados-header">
+      <p>Escolas que não responderam ou recusaram a proposta. Você pode reativar uma escola para reiniciar o follow-up.</p>
+    </div>
+    <table class="leads-table">
+      <thead>
+        <tr>
+          <th>Escola</th>
+          <th>Município</th>
+          <th>Telefone</th>
+          <th>Motivo</th>
+          <th>Data</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="rejeitados-tbody"></tbody>
+    </table>
+  </section>
+
+</main>
+
+<!-- ===================== SIDEBAR DE DETALHES ===================== -->
+<div class="sidebar-overlay" id="sidebar-overlay">
+  <aside class="sidebar" id="sidebar">
+    <button class="sidebar-close" id="sidebar-close">✕</button>
+    <div id="sidebar-content"></div>
+  </aside>
+</div>
+
+<!-- ===================== MODAL: IDENTIFICAÇÃO DO USUÁRIO ===================== -->
+<div class="name-modal-overlay" id="name-modal-overlay">
+  <div class="name-modal">
+    <h3>Antes de começar</h3>
+    <p>Quem é você? Isso aparece no histórico de follow-up de cada escola, pra saber quem fez cada contato.</p>
+    <select id="name-modal-select">
+      <option value="">Selecione seu nome...</option>
+    </select>
+    <input type="text" id="name-modal-input" placeholder="Digite seu nome" maxlength="40" hidden>
+    <div class="name-modal-actions">
+      <button class="btn-ghost-light" id="name-modal-skip">Continuar sem nome</button>
+      <button class="btn-primary" id="name-modal-confirm">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="data/escolas.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/team-config.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
