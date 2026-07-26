@@ -211,11 +211,21 @@ let currentUserName = localStorage.getItem(USER_NAME_KEY) || null;
 
 const OUTRO_VALUE = '__outro__';
 
-function initNameModal() {
-  if (currentUserName) return;
+function renderUserBadge() {
+  const badge = document.getElementById('current-user-badge');
+  if (!badge) return;
+  badge.textContent = currentUserName ? `👤 ${currentUserName}` : '👤 Definir nome';
+}
+
+function openNameModal() {
   const overlay = document.getElementById('name-modal-overlay');
   const select = document.getElementById('name-modal-select');
   const input = document.getElementById('name-modal-input');
+
+  // reseta o select pra evitar duplicar as opções toda vez que o modal reabre
+  select.innerHTML = '<option value="">Selecione seu nome...</option>';
+  input.hidden = true;
+  input.value = '';
 
   const roster = (typeof TEAM_MEMBERS !== 'undefined' && TEAM_MEMBERS.length) ? TEAM_MEMBERS : [];
   roster.forEach(name => {
@@ -229,11 +239,12 @@ function initNameModal() {
   select.appendChild(outroOpt);
 
   overlay.classList.add('open');
+}
 
-  select.addEventListener('change', () => {
-    input.hidden = select.value !== OUTRO_VALUE;
-    if (!input.hidden) input.focus();
-  });
+function initNameModal() {
+  const overlay = document.getElementById('name-modal-overlay');
+  const select = document.getElementById('name-modal-select');
+  const input = document.getElementById('name-modal-input');
 
   function confirmName() {
     let val = '';
@@ -245,14 +256,24 @@ function initNameModal() {
     if (val) {
       currentUserName = val;
       localStorage.setItem(USER_NAME_KEY, val);
+      renderUserBadge();
     }
     overlay.classList.remove('open');
   }
+
+  select.addEventListener('change', () => {
+    input.hidden = select.value !== OUTRO_VALUE;
+    if (!input.hidden) input.focus();
+  });
   document.getElementById('name-modal-confirm').addEventListener('click', confirmName);
   document.getElementById('name-modal-skip').addEventListener('click', () => {
     overlay.classList.remove('open');
   });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmName(); });
+  document.getElementById('current-user-badge').addEventListener('click', openNameModal);
+
+  renderUserBadge();
+  if (!currentUserName) openNameModal();
 }
 
 /* ------------------------------------------------------------------------
