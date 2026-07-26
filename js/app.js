@@ -228,9 +228,10 @@ function openNameModal() {
   input.hidden = true;
   input.value = '';
 
-  // se já existe um nome salvo, o botão de "escape" vira "Cancelar" (mantém o nome atual);
-  // só no primeiro acesso (sem nome ainda) ele oferece seguir anônimo de fato
-  skipBtn.textContent = currentUserName ? 'Cancelar' : 'Continuar sem nome';
+  // no primeiro acesso (sem nome ainda) a identificação é obrigatória — sem atalho pra fechar.
+  // só quando já existe um nome salvo (reabertura pelo badge) aparece "Cancelar", pra manter o nome atual.
+  skipBtn.hidden = !currentUserName;
+  skipBtn.textContent = 'Cancelar';
 
   const roster = (typeof TEAM_MEMBERS !== 'undefined' && TEAM_MEMBERS.length) ? TEAM_MEMBERS : [];
   roster.forEach(name => {
@@ -258,11 +259,16 @@ function initNameModal() {
     } else {
       val = select.value;
     }
-    if (val) {
-      currentUserName = val;
-      localStorage.setItem(USER_NAME_KEY, val);
-      renderUserBadge();
+    if (!val) {
+      // sem nome escolhido: não fecha o modal, só sinaliza o que falta preencher
+      select.style.borderColor = '#d63b3b';
+      if (select.value === OUTRO_VALUE) input.focus(); else select.focus();
+      return;
     }
+    currentUserName = val;
+    localStorage.setItem(USER_NAME_KEY, val);
+    renderUserBadge();
+    select.style.borderColor = '';
     overlay.classList.remove('open');
   }
 
