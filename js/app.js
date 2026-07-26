@@ -105,7 +105,15 @@ function initFirebase() {
   }
 }
 
+let leadsListenerAttached = false;
+
 function listenToLeadsState() {
+  // onAuthStateChanged pode disparar mais de uma vez na mesma sessão (ex: restauração
+  // de sessão anônima persistida + confirmação do signInAnonymously); sem essa trava,
+  // cada disparo extra anexa um novo listener do Firestore, duplicando o processamento
+  // e o re-render a cada mudança remota.
+  if (leadsListenerAttached) return;
+  leadsListenerAttached = true;
   db.collection(COLLECTION_NAME).onSnapshot(snapshot => {
     snapshot.docChanges().forEach(change => {
       const id = change.doc.id;
@@ -197,8 +205,30 @@ function deleteHistoryEntry(id, index) {
   const cur = getState(id);
   const hist = (cur.followup_history || []).slice();
   if (index < 0 || index >= hist.length) return;
+  const target = hist[index];
+
+  if (firestoreReady && db) {
+    // usa uma transação lendo o array direto do servidor: pushHistory grava via
+    // arrayUnion, então se alguém adicionar uma entrada nova bem no instante em que
+    // esta exclusão está sendo salva, um merge ingênuo (ler estado local -> sobrescrever
+    // array inteiro) apagaria essa entrada nova junto sem querer. A transação evita isso.
+    const ref = db.collection(COLLECTION_NAME).doc(String(id));
+    db.runTransaction(tx => tx.get(ref).then(doc => {
+      const remoteHist = (doc.exists && doc.data().followup_history) || [];
+      const newHist = remoteHist.filter(h => h.ts !== target.ts);
+      tx.set(ref, {
+        followup_history: newHist,
+        last_updated_by: currentUserName || null,
+        updated_at: new Date().toISOString(),
+      }, { merge: true });
+    })).catch(e => console.error('Erro ao excluir entrada do histórico', e));
+  }
+
+  // atualização otimista local pra refletir na hora; se estiver sincronizado, o
+  // onSnapshot confirma (ou corrige) o resultado assim que a transação terminar
   hist.splice(index, 1);
-  setState(id, { followup_history: hist });
+  LEADS_STATE[id] = { ...cur, followup_history: hist };
+  if (!firestoreReady) saveLocalState();
   refreshAll();
 }
 
