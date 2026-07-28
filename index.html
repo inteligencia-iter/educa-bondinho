@@ -30,6 +30,7 @@
     <button class="tab-btn active" data-tab="mapa">Mapa</button>
     <button class="tab-btn" data-tab="leads">Leads</button>
     <button class="tab-btn" data-tab="followup">Follow Up</button>
+    <button class="tab-btn" data-tab="agenda">Agenda</button>
     <button class="tab-btn" data-tab="rejeitados">Rejeitados / Sem Resposta</button>
     <button class="tab-btn" data-tab="concluidos">Concluídos</button>
   </nav>
@@ -166,6 +167,28 @@
     <div class="kanban" id="kanban-board"></div>
   </section>
 
+  <!-- ===================== AGENDA ===================== -->
+  <section class="tab-panel" id="panel-agenda">
+    <div class="agenda-header">
+      <p>Escolas com visita agendada, ordenadas pela data mais próxima — para planejamento da operação.</p>
+      <button id="btn-export-agenda" class="btn-export" title="Exportar em CSV a agenda de visitas">⬇ Exportar CSV</button>
+    </div>
+    <table class="leads-table">
+      <thead>
+        <tr>
+          <th>Data Agendada</th>
+          <th>Escola</th>
+          <th>Município</th>
+          <th>Endereço</th>
+          <th>Telefone</th>
+          <th>Responsável</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="agenda-tbody"></tbody>
+    </table>
+  </section>
+
   <!-- ===================== REJEITADOS ===================== -->
   <section class="tab-panel" id="panel-rejeitados">
     <div class="rejeitados-header">
@@ -203,7 +226,8 @@
           <th>Telefone</th>
           <th>Valor (R$)</th>
           <th>Observações</th>
-          <th>Data</th>
+          <th>Data da Visita</th>
+          <th>Data de Conclusão</th>
           <th></th>
         </tr>
       </thead>
@@ -263,11 +287,28 @@
   <div class="name-modal">
     <h3>Marcar como concluída</h3>
     <p>Escola com visita realizada e pagamento processado.</p>
+    <label class="modal-field-label" for="complete-data-visita-input">Data da visita</label>
+    <input type="date" id="complete-data-visita-input">
+    <label class="modal-field-label" for="complete-valor-input">Valor (R$)</label>
     <input type="number" id="complete-valor-input" step="0.01" min="0" placeholder="Valor (R$)">
     <textarea id="complete-notes-input" placeholder="Observações (opcional)..."></textarea>
     <div class="name-modal-actions">
       <button class="btn-ghost-light" id="complete-modal-cancel">Cancelar</button>
       <button class="btn-primary" id="complete-modal-confirm">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: AGENDAR VISITA ===================== -->
+<div class="name-modal-overlay" id="schedule-modal-overlay">
+  <div class="name-modal">
+    <h3>Agendar visita</h3>
+    <p>Defina a data planejada para a visita da escola ao Bondinho. Essa informação alimenta a aba Agenda.</p>
+    <label class="modal-field-label" for="schedule-date-input">Data agendada</label>
+    <input type="date" id="schedule-date-input">
+    <div class="name-modal-actions">
+      <button class="btn-ghost-light" id="schedule-modal-cancel">Cancelar</button>
+      <button class="btn-primary" id="schedule-modal-confirm">Confirmar</button>
     </div>
   </div>
 </div>
