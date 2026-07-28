@@ -749,8 +749,10 @@ function kanbanCard(school, stage) {
         <option value="">Sem follow-up iniciado</option>
         ${STAGES.map(s => `<option value="${s}" ${s === stage ? 'selected' : ''}>${STAGE_LABELS[s]}</option>`).join('')}
       </select>
-      <button class="kc-reject" title="Marcar como rejeitado ou sem resposta">✕</button>
-      ${stage === 'visitado' ? '<button class="kc-complete" title="Marcar como concluída (visita + pagamento)">✓ Concluir</button>' : ''}
+      <div class="kc-buttons">
+        <button class="kc-reject" title="Marcar como rejeitado ou sem resposta">✕ Rejeitar</button>
+        ${stage === 'visitado' ? '<button class="kc-complete" title="Marcar como concluída (visita + pagamento)">✓ Concluir</button>' : ''}
+      </div>
     </div>
     <button class="kc-history-toggle" type="button">🕒 Histórico (${hist.length})</button>
     <div class="kc-history" hidden>${renderHistoryList(hist)}</div>
