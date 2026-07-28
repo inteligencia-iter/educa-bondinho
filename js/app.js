@@ -15,7 +15,7 @@ const STAGE_LABELS = {
 const TERMINAL_LABELS = { rejeitado: 'Rejeitado', nao_respondeu: 'Não Respondeu' };
 const CONCLUDED_STAGE = 'concluido';
 const CONCLUDED_LABEL = 'Concluído';
-const EXTRA_LABELS = { 'sem_followup': 'Removido do funil (sem follow-up)', 'reativado -> novo': 'Reativado', 'reativado -> visitado': 'Reativado (voltou para Visita Realizada)' };
+const EXTRA_LABELS = { 'sem_followup': 'Removido do funil (sem follow-up)', 'reativado -> novo': 'Reativado', 'reativado -> visitado': 'Reativado (voltou para Visita Realizada)', 'reagendado': 'Data de visita reagendada' };
 // lookup unico usado em qualquer lugar que precise exibir o rotulo de uma etapa/estagio
 const ALL_LABELS = { ...STAGE_LABELS, ...TERMINAL_LABELS, [CONCLUDED_STAGE]: CONCLUDED_LABEL, ...EXTRA_LABELS };
 
@@ -151,6 +151,7 @@ function getState(id) {
     contacted: false, followup_stage: null, followup_history: [],
     rejection_category: null, rejection_notes: '',
     valor_pago: null, conclusion_notes: '',
+    data_visita_agendada: null, data_visita_realizada: null,
     notes: '',
   };
 }
@@ -206,6 +207,17 @@ function moveStage(id, stage) {
   refreshAll();
 }
 
+// Move para (ou mantém) "Visita Agendada" registrando a data planejada da visita.
+// Se a escola já estava em "Visita Agendada", isso é um reagendamento (a etapa não
+// muda, só a data) e o histórico registra 'reagendado' em vez de duplicar a entrada
+// de transição de etapa.
+function scheduleVisit(id, date) {
+  const wasAlreadyScheduled = getState(id).followup_stage === 'visita_agendada';
+  setState(id, { followup_stage: 'visita_agendada', data_visita_agendada: date });
+  pushHistory(id, wasAlreadyScheduled ? 'reagendado' : 'visita_agendada');
+  refreshAll();
+}
+
 function rejectSchool(id, stage, category, notes) {
   // "category" (motivo fixo da lista) só se aplica a rejeição explícita;
   // em "não respondeu" não existe motivo declarado, só fica a observação livre.
@@ -225,11 +237,12 @@ function reactivateSchool(id) {
   refreshAll();
 }
 
-function completeSchool(id, valor, notes) {
+function completeSchool(id, valor, notes, dataVisita) {
   setState(id, {
     followup_stage: CONCLUDED_STAGE,
     valor_pago: valor,
     conclusion_notes: notes || '',
+    data_visita_realizada: dataVisita || null,
     contacted: true,
   });
   pushHistory(id, CONCLUDED_STAGE);
@@ -238,7 +251,7 @@ function completeSchool(id, valor, notes) {
 
 function revertConclusion(id) {
   // volta pra "Visita Realizada" (não pra "Novo"), já que a visita de fato aconteceu
-  setState(id, { followup_stage: 'visitado', valor_pago: null, conclusion_notes: '' });
+  setState(id, { followup_stage: 'visitado', valor_pago: null, conclusion_notes: '', data_visita_realizada: null });
   pushHistory(id, 'reativado -> visitado');
   refreshAll();
 }
@@ -741,9 +754,16 @@ function kanbanCard(school, stage) {
   const st = getState(school.codigo_inep);
   const hist = st.followup_history || [];
   const responsavel = st.last_updated_by ? ` · resp.: ${st.last_updated_by}` : '';
+  const scheduledBlock = stage === 'visita_agendada' ? `
+    <div class="kc-scheduled">
+      <span>📅 ${formatDateOnlyBR(st.data_visita_agendada)}</span>
+      <button class="kc-reschedule" type="button">reagendar</button>
+    </div>
+  ` : '';
   card.innerHTML = `
     <h5>${school.nome}</h5>
     <div class="kc-meta">${school.municipio} · ${school.telefone || 'sem telefone'}${responsavel}</div>
+    ${scheduledBlock}
     <div class="kc-actions">
       <select class="stage-move">
         <option value="">Sem follow-up iniciado</option>
@@ -767,12 +787,21 @@ function kanbanCard(school, stage) {
     const box = card.querySelector('.kc-history');
     box.hidden = !box.hidden;
   });
+  const rescheduleBtn = card.querySelector('.kc-reschedule');
+  if (rescheduleBtn) {
+    rescheduleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openScheduleModal(school.codigo_inep);
+    });
+  }
   card.querySelector('.stage-move').addEventListener('change', (e) => {
     const val = e.target.value;
     if (!val) {
       const ok = confirm(`Remover "${school.nome}" do funil de follow-up? Ela volta a aparecer como "Sem contato" no Mapa e em Leads.`);
       if (ok) clearFollowup(school.codigo_inep);
       else renderKanban(); // desfaz a troca visual do select se cancelar
+    } else if (val === 'visita_agendada') {
+      openScheduleModal(school.codigo_inep);
     } else {
       moveStage(school.codigo_inep, val);
     }
@@ -880,6 +909,7 @@ let completeModalTargetId = null;
 
 function initCompleteModal() {
   const overlay = document.getElementById('complete-modal-overlay');
+  const dataVisitaInput = document.getElementById('complete-data-visita-input');
   const valorInput = document.getElementById('complete-valor-input');
   const notesInput = document.getElementById('complete-notes-input');
 
@@ -890,17 +920,23 @@ function initCompleteModal() {
   });
 
   document.getElementById('complete-modal-confirm').addEventListener('click', () => {
+    if (!dataVisitaInput.value) {
+      dataVisitaInput.style.borderColor = '#d63b3b';
+      dataVisitaInput.focus();
+      return;
+    }
     const valor = parseFloat(String(valorInput.value).replace(',', '.'));
     if (valorInput.value === '' || isNaN(valor) || valor < 0) {
       valorInput.style.borderColor = '#d63b3b';
       valorInput.focus();
       return;
     }
+    const dataVisita = dataVisitaInput.value;
     const notes = notesInput.value.trim();
     const id = completeModalTargetId;
     overlay.classList.remove('open');
     completeModalTargetId = null;
-    if (id != null) completeSchool(id, valor, notes);
+    if (id != null) completeSchool(id, valor, notes, dataVisita);
   });
 }
 
@@ -912,11 +948,58 @@ function openCompleteModal(id) {
   }
   completeModalTargetId = id;
   const overlay = document.getElementById('complete-modal-overlay');
+  const dataVisitaInput = document.getElementById('complete-data-visita-input');
   const valorInput = document.getElementById('complete-valor-input');
   const notesInput = document.getElementById('complete-notes-input');
+  dataVisitaInput.style.borderColor = '';
+  // pré-preenche com a data que já havia sido agendada (se houver) - o usuário
+  // ainda pode ajustar caso a visita tenha acontecido em outro dia
+  dataVisitaInput.value = st.data_visita_realizada || st.data_visita_agendada || '';
   valorInput.style.borderColor = '';
   valorInput.value = st.valor_pago != null ? String(st.valor_pago) : '';
   notesInput.value = st.conclusion_notes || '';
+  overlay.classList.add('open');
+}
+
+/* ------------------------------------------------------------------------
+   MODAL: AGENDAR VISITA
+   ------------------------------------------------------------------------ */
+
+let scheduleModalTargetId = null;
+
+function initScheduleModal() {
+  const overlay = document.getElementById('schedule-modal-overlay');
+  const dateInput = document.getElementById('schedule-date-input');
+
+  document.getElementById('schedule-modal-cancel').addEventListener('click', () => {
+    overlay.classList.remove('open');
+    scheduleModalTargetId = null;
+    // desfaz a troca visual do select (kanban ou sidebar), se algum estiver aberto
+    refreshSidebarIfOpen();
+    renderKanban();
+  });
+
+  document.getElementById('schedule-modal-confirm').addEventListener('click', () => {
+    if (!dateInput.value) {
+      dateInput.style.borderColor = '#d63b3b';
+      dateInput.focus();
+      return;
+    }
+    const date = dateInput.value;
+    const id = scheduleModalTargetId;
+    overlay.classList.remove('open');
+    scheduleModalTargetId = null;
+    if (id != null) scheduleVisit(id, date);
+  });
+}
+
+function openScheduleModal(id) {
+  scheduleModalTargetId = id;
+  const st = getState(id);
+  const overlay = document.getElementById('schedule-modal-overlay');
+  const dateInput = document.getElementById('schedule-date-input');
+  dateInput.style.borderColor = '';
+  dateInput.value = st.data_visita_agendada || '';
   overlay.classList.add('open');
 }
 
@@ -977,6 +1060,18 @@ function formatCurrencyBR(valor) {
   return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Formata uma data "pura" no formato do <input type="date"> (YYYY-MM-DD) para DD/MM/YYYY.
+// Faz isso via split de string em vez de `new Date(str)` de propósito: um "YYYY-MM-DD" é
+// interpretado pelo JS como UTC-meia-noite, e ao converter pra horário local (ex: UTC-3)
+// isso viraria o dia anterior às 21h — um bug clássico de "data volta um dia".
+function formatDateOnlyBR(dateStr) {
+  if (!dateStr) return '—';
+  const parts = String(dateStr).split('-');
+  if (parts.length !== 3) return dateStr;
+  const [y, m, d] = parts;
+  return `${d}/${m}/${y}`;
+}
+
 function renderConcluidos() {
   const tbody = document.getElementById('concluidos-tbody');
   tbody.innerHTML = '';
@@ -991,6 +1086,7 @@ function renderConcluidos() {
       <td>${s.telefone || '—'}</td>
       <td>${st.valor_pago != null ? 'R$ ' + formatCurrencyBR(st.valor_pago) : '—'}</td>
       <td>${st.conclusion_notes || '—'}</td>
+      <td>${formatDateOnlyBR(st.data_visita_realizada)}</td>
       <td>${date}</td>
       <td><button class="btn-reactivate" data-id="${s.codigo_inep}">Reverter</button></td>
     `;
@@ -1004,6 +1100,52 @@ function renderConcluidos() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       revertConclusion(Number(btn.dataset.id));
+    });
+  });
+}
+
+/* ==========================================================================
+   AGENDA (escolas em "Visita Agendada", ordenadas pela data mais próxima)
+   ========================================================================== */
+
+function schoolsAgenda() {
+  return SCHOOLS
+    .filter(s => getState(s.codigo_inep).followup_stage === 'visita_agendada')
+    // "YYYY-MM-DD" ordena corretamente como string, sem precisar parsear Date;
+    // escolas sem data (não deveria acontecer, mas por segurança) vão pro final.
+    .slice()
+    .sort((a, b) => {
+      const da = getState(a.codigo_inep).data_visita_agendada || '9999-99-99';
+      const db_ = getState(b.codigo_inep).data_visita_agendada || '9999-99-99';
+      return da < db_ ? -1 : da > db_ ? 1 : 0;
+    });
+}
+
+function renderAgenda() {
+  const tbody = document.getElementById('agenda-tbody');
+  tbody.innerHTML = '';
+  schoolsAgenda().forEach(s => {
+    const st = getState(s.codigo_inep);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="agenda-date-cell">${formatDateOnlyBR(st.data_visita_agendada)}</td>
+      <td>${s.nome}</td>
+      <td>${s.municipio}</td>
+      <td>${s.endereco || '—'}</td>
+      <td>${s.telefone || '—'}</td>
+      <td>${st.last_updated_by || '—'}</td>
+      <td><button class="btn-reactivate btn-reschedule-agenda" data-id="${s.codigo_inep}">Reagendar</button></td>
+    `;
+    tr.querySelector('td:not(:last-child)').parentElement.addEventListener('click', (e) => {
+      if (e.target.classList.contains('btn-reschedule-agenda')) return;
+      openSidebar(s.codigo_inep);
+    });
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('.btn-reschedule-agenda').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openScheduleModal(Number(btn.dataset.id));
     });
   });
 }
@@ -1042,9 +1184,19 @@ function openSidebar(id) {
     <hr>
     <div class="info-label" style="margin-bottom:6px;">Detalhes da conclusão</div>
     <div class="info-grid">
+      <div><div class="info-label">Data da visita</div><div class="info-value">${formatDateOnlyBR(st.data_visita_realizada)}</div></div>
       <div><div class="info-label">Valor (R$)</div><div class="info-value">${st.valor_pago != null ? formatCurrencyBR(st.valor_pago) : '—'}</div></div>
       <div class="full"><div class="info-label">Observações</div><div class="info-value">${st.conclusion_notes || '—'}</div></div>
     </div>
+  ` : '';
+
+  const scheduleBlock = st.followup_stage === 'visita_agendada' ? `
+    <hr>
+    <div class="info-label" style="margin-bottom:6px;">Agendamento</div>
+    <div class="info-grid">
+      <div><div class="info-label">Data agendada</div><div class="info-value">${formatDateOnlyBR(st.data_visita_agendada)}</div></div>
+    </div>
+    <button class="schedule-inline-edit" type="button" id="sidebar-reschedule">✎ Editar data</button>
   ` : '';
 
   content.innerHTML = `
@@ -1076,6 +1228,7 @@ function openSidebar(id) {
     </select>
     ${rejectionBlock}
     ${conclusionBlock}
+    ${scheduleBlock}
 
     <hr>
     <div class="info-label" style="margin-bottom:6px;">Notas internas</div>
@@ -1104,8 +1257,16 @@ function openSidebar(id) {
       openCompleteModal(id);
       return;
     }
+    if (val === 'visita_agendada') {
+      openScheduleModal(id);
+      return;
+    }
     moveStage(id, val);
   });
+  const rescheduleLink = content.querySelector('#sidebar-reschedule');
+  if (rescheduleLink) {
+    rescheduleLink.addEventListener('click', () => openScheduleModal(id));
+  }
   content.querySelector('#sidebar-save-notes').addEventListener('click', () => {
     setState(id, { notes: content.querySelector('#sidebar-notes').value });
     refreshAll();
@@ -1278,7 +1439,7 @@ function exportRejeitadosCSV() {
 }
 
 function exportConcluidosCSV() {
-  const headers = ['Escola', 'Telefone', 'Município', 'Valor (R$)', 'Observações', 'Data de Conclusão', 'Responsável'];
+  const headers = ['Escola', 'Telefone', 'Município', 'Valor (R$)', 'Observações', 'Data da Visita', 'Data de Conclusão', 'Responsável'];
   const rows = schoolsConcluded().map(s => {
     const st = getState(s.codigo_inep);
     const lastHist = (st.followup_history || []).slice(-1)[0];
@@ -1286,15 +1447,28 @@ function exportConcluidosCSV() {
     return [
       s.nome, s.telefone || '—', s.municipio,
       st.valor_pago != null ? formatCurrencyBR(st.valor_pago) : '—',
-      st.conclusion_notes || '—', date, st.last_updated_by || '—',
+      st.conclusion_notes || '—', formatDateOnlyBR(st.data_visita_realizada), date, st.last_updated_by || '—',
     ];
   });
   downloadCSV(`educa-bondinho-concluidos-${todayStamp()}.csv`, headers, rows);
 }
 
+function exportAgendaCSV() {
+  const headers = ['Data Agendada', 'Escola', 'Telefone', 'Município', 'Endereço', 'Responsável'];
+  const rows = schoolsAgenda().map(s => {
+    const st = getState(s.codigo_inep);
+    return [
+      formatDateOnlyBR(st.data_visita_agendada), s.nome, s.telefone || '—', s.municipio,
+      s.endereco || '—', st.last_updated_by || '—',
+    ];
+  });
+  downloadCSV(`educa-bondinho-agenda-${todayStamp()}.csv`, headers, rows);
+}
+
 document.getElementById('btn-export-mapa').addEventListener('click', exportMapaCSV);
 document.getElementById('btn-export-leads').addEventListener('click', exportLeadsCSV);
 document.getElementById('btn-export-followup').addEventListener('click', exportFollowupCSV);
+document.getElementById('btn-export-agenda').addEventListener('click', exportAgendaCSV);
 document.getElementById('btn-export-rejeitados').addEventListener('click', exportRejeitadosCSV);
 document.getElementById('btn-export-concluidos').addEventListener('click', exportConcluidosCSV);
 
@@ -1307,6 +1481,7 @@ function refreshAll() {
   renderMap();
   renderLeads();
   renderKanban();
+  renderAgenda();
   renderRejeitados();
   renderConcluidos();
   refreshSidebarIfOpen();
@@ -1316,6 +1491,7 @@ function init() {
   initNameModal();
   initRejectModal();
   initCompleteModal();
+  initScheduleModal();
   initFirebase();
   initMap();
   buildMultiselect('modalidade-filter-mapa', selectedEtapasMapa, renderMap);
