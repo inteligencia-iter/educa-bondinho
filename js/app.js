@@ -13,7 +13,25 @@ const STAGE_LABELS = {
   visitado: 'Visita Realizada',
 };
 const TERMINAL_LABELS = { rejeitado: 'Rejeitado', nao_respondeu: 'Não Respondeu' };
-const EXTRA_LABELS = { 'sem_followup': 'Removido do funil (sem follow-up)', 'reativado -> novo': 'Reativado' };
+const CONCLUDED_STAGE = 'concluido';
+const CONCLUDED_LABEL = 'Concluído';
+const EXTRA_LABELS = { 'sem_followup': 'Removido do funil (sem follow-up)', 'reativado -> novo': 'Reativado', 'reativado -> visitado': 'Reativado (voltou para Visita Realizada)' };
+// lookup unico usado em qualquer lugar que precise exibir o rotulo de uma etapa/estagio
+const ALL_LABELS = { ...STAGE_LABELS, ...TERMINAL_LABELS, [CONCLUDED_STAGE]: CONCLUDED_LABEL, ...EXTRA_LABELS };
+
+// Lista fechada de motivos de rejeicao, validada com o time comercial.
+// Usada apenas quando a escola REJEITA explicitamente (nao se aplica a "Nao Respondeu",
+// ja que nesse caso nao ha um motivo declarado).
+const REJECTION_REASONS = [
+  'Parceria com a C2Rio',
+  'Parceria com outro concorrente/atração',
+  'Sem orçamento ou verba não aprovada',
+  'Não é do perfil pedagógico da escola (não realiza esse tipo de passeio)',
+  'Já visitou o Bondinho recentemente',
+  'Logística inviável (transporte/distância)',
+  'Direção ou coordenação pedagógica não aprovou',
+  'Outro',
+];
 
 const ZONA_COLORS = {
   'Centro': '#8e44ad',
@@ -129,7 +147,12 @@ function listenToLeadsState() {
 }
 
 function getState(id) {
-  return LEADS_STATE[id] || { contacted: false, followup_stage: null, followup_history: [], rejection_reason: null, notes: '' };
+  return LEADS_STATE[id] || {
+    contacted: false, followup_stage: null, followup_history: [],
+    rejection_category: null, rejection_notes: '',
+    valor_pago: null, conclusion_notes: '',
+    notes: '',
+  };
 }
 
 function writeRemote(id, patch) {
@@ -183,20 +206,49 @@ function moveStage(id, stage) {
   refreshAll();
 }
 
-function rejectSchool(id, stage, reason) {
-  setState(id, { followup_stage: stage, rejection_reason: reason, contacted: true });
+function rejectSchool(id, stage, category, notes) {
+  // "category" (motivo fixo da lista) só se aplica a rejeição explícita;
+  // em "não respondeu" não existe motivo declarado, só fica a observação livre.
+  setState(id, {
+    followup_stage: stage,
+    rejection_category: stage === 'rejeitado' ? (category || null) : null,
+    rejection_notes: notes || '',
+    contacted: true,
+  });
   pushHistory(id, stage);
   refreshAll();
 }
 
 function reactivateSchool(id) {
-  setState(id, { followup_stage: 'novo', rejection_reason: null });
+  setState(id, { followup_stage: 'novo', rejection_category: null, rejection_notes: '' });
   pushHistory(id, 'reativado -> novo');
   refreshAll();
 }
 
+function completeSchool(id, valor, notes) {
+  setState(id, {
+    followup_stage: CONCLUDED_STAGE,
+    valor_pago: valor,
+    conclusion_notes: notes || '',
+    contacted: true,
+  });
+  pushHistory(id, CONCLUDED_STAGE);
+  refreshAll();
+}
+
+function revertConclusion(id) {
+  // volta pra "Visita Realizada" (não pra "Novo"), já que a visita de fato aconteceu
+  setState(id, { followup_stage: 'visitado', valor_pago: null, conclusion_notes: '' });
+  pushHistory(id, 'reativado -> visitado');
+  refreshAll();
+}
+
 function clearFollowup(id) {
-  setState(id, { followup_stage: null, contacted: false, rejection_reason: null });
+  setState(id, {
+    followup_stage: null, contacted: false,
+    rejection_category: null, rejection_notes: '',
+    valor_pago: null, conclusion_notes: '',
+  });
   pushHistory(id, 'sem_followup');
   refreshAll();
 }
@@ -489,8 +541,7 @@ function popupHtml(school) {
     </div>`;
 }
 
-function renderMap() {
-  clusterGroup.clearLayers();
+function filteredMapa() {
   const contactedFilter = document.getElementById('contacted-filter-mapa').value;
   let list = schoolsForLevel(currentLevel).filter(s => matchesEtapas(s, selectedEtapasMapa));
   if (currentSubFilter) {
@@ -499,6 +550,12 @@ function renderMap() {
   }
   if (contactedFilter === 'ocultar') list = list.filter(s => !getState(s.codigo_inep).contacted);
   else if (contactedFilter === 'somente') list = list.filter(s => getState(s.codigo_inep).contacted);
+  return list;
+}
+
+function renderMap() {
+  clusterGroup.clearLayers();
+  const list = filteredMapa();
 
   list.forEach(s => {
     if (s.lat == null || s.lon == null) return;
@@ -583,8 +640,7 @@ function filteredLeads() {
 function statusPill(school) {
   const st = getState(school.codigo_inep);
   if (!st.followup_stage) return '<span class="status-pill sem-status">Sem contato</span>';
-  if (STAGE_LABELS[st.followup_stage]) return `<span class="status-pill ${st.followup_stage}">${STAGE_LABELS[st.followup_stage]}</span>`;
-  if (TERMINAL_LABELS[st.followup_stage]) return `<span class="status-pill ${st.followup_stage}">${TERMINAL_LABELS[st.followup_stage]}</span>`;
+  if (ALL_LABELS[st.followup_stage]) return `<span class="status-pill ${st.followup_stage}">${ALL_LABELS[st.followup_stage]}</span>`;
   return '';
 }
 
@@ -668,7 +724,7 @@ function renderHistoryList(history, options = {}) {
   if (items.length === 0) return '<div class="history-item">Nenhuma interação registrada ainda.</div>';
   return items.map((h, revIdx) => {
     const originalIndex = (hist.length - 1) - revIdx;
-    const label = STAGE_LABELS[h.stage] || TERMINAL_LABELS[h.stage] || EXTRA_LABELS[h.stage] || h.stage;
+    const label = ALL_LABELS[h.stage] || h.stage;
     const author = h.by ? ` <strong>· ${h.by}</strong>` : '';
     const delBtn = deletable
       ? `<button class="history-delete" type="button" data-school-id="${schoolId}" data-index="${originalIndex}" title="Excluir esta entrada do histórico">✕</button>`
@@ -694,6 +750,7 @@ function kanbanCard(school, stage) {
         ${STAGES.map(s => `<option value="${s}" ${s === stage ? 'selected' : ''}>${STAGE_LABELS[s]}</option>`).join('')}
       </select>
       <button class="kc-reject" title="Marcar como rejeitado ou sem resposta">✕</button>
+      ${stage === 'visitado' ? '<button class="kc-complete" title="Marcar como concluída (visita + pagamento)">✓ Concluir</button>' : ''}
     </div>
     <button class="kc-history-toggle" type="button">🕒 Histórico (${hist.length})</button>
     <div class="kc-history" hidden>${renderHistoryList(hist)}</div>
@@ -720,17 +777,145 @@ function kanbanCard(school, stage) {
   });
   card.querySelector('.kc-reject').addEventListener('click', (e) => {
     e.stopPropagation();
-    openRejectPrompt(school.codigo_inep);
+    openRejectModal(school.codigo_inep);
   });
+  const completeBtn = card.querySelector('.kc-complete');
+  if (completeBtn) {
+    completeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openCompleteModal(school.codigo_inep);
+    });
+  }
   return card;
 }
 
-function openRejectPrompt(id) {
-  const reason = prompt('Motivo (ex: "Sem interesse no momento", "Já visita outro parque", "Sem retorno após 3 tentativas"):', '');
-  if (reason === null) return;
-  const respondeu = confirm('A escola respondeu e recusou a proposta?\n\nOK = Rejeitou explicitamente\nCancelar = Não respondeu / sem retorno');
-  const stage = respondeu ? 'rejeitado' : 'nao_respondeu';
-  rejectSchool(id, stage, reason || (respondeu ? 'Rejeitado sem motivo especificado' : 'Sem resposta'));
+/* ------------------------------------------------------------------------
+   MODAL: REJEITAR / SEM RESPOSTA
+   ------------------------------------------------------------------------ */
+
+let rejectModalTargetId = null;
+
+function initRejectModal() {
+  const overlay = document.getElementById('reject-modal-overlay');
+  const choiceBox = document.getElementById('reject-modal-choice');
+  const reasonField = document.getElementById('reject-reason-field');
+  const reasonSelect = document.getElementById('reject-reason-select');
+  const notesInput = document.getElementById('reject-notes-input');
+
+  REJECTION_REASONS.forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r; opt.textContent = r;
+    reasonSelect.appendChild(opt);
+  });
+
+  choiceBox.querySelectorAll('input[name="reject-type"]').forEach(r => {
+    r.addEventListener('change', () => {
+      reasonField.hidden = r.value !== 'rejeitado' || !r.checked;
+      choiceBox.style.outline = '';
+    });
+  });
+
+  document.getElementById('reject-modal-cancel').addEventListener('click', () => {
+    overlay.classList.remove('open');
+    rejectModalTargetId = null;
+    refreshSidebarIfOpen(); // desfaz a troca visual do select do sidebar, se aberto
+  });
+
+  document.getElementById('reject-modal-confirm').addEventListener('click', () => {
+    const checked = choiceBox.querySelector('input[name="reject-type"]:checked');
+    if (!checked) {
+      choiceBox.style.outline = '1px solid #d63b3b';
+      return;
+    }
+    const stage = checked.value;
+    if (stage === 'rejeitado' && !reasonSelect.value) {
+      reasonSelect.style.borderColor = '#d63b3b';
+      reasonSelect.focus();
+      return;
+    }
+    const category = stage === 'rejeitado' ? reasonSelect.value : null;
+    const notes = notesInput.value.trim();
+    const id = rejectModalTargetId;
+    overlay.classList.remove('open');
+    rejectModalTargetId = null;
+    if (id != null) rejectSchool(id, stage, category, notes);
+  });
+}
+
+function openRejectModal(id, presetStage) {
+  const overlay = document.getElementById('reject-modal-overlay');
+  const choiceBox = document.getElementById('reject-modal-choice');
+  const reasonField = document.getElementById('reject-reason-field');
+  const reasonSelect = document.getElementById('reject-reason-select');
+  const notesInput = document.getElementById('reject-notes-input');
+  const st = getState(id);
+
+  rejectModalTargetId = id;
+  choiceBox.style.outline = '';
+  reasonSelect.style.borderColor = '';
+  notesInput.value = st.rejection_notes || '';
+
+  if (presetStage) {
+    choiceBox.hidden = true;
+    choiceBox.querySelectorAll('input[name="reject-type"]').forEach(r => { r.checked = r.value === presetStage; });
+    reasonField.hidden = presetStage !== 'rejeitado';
+    reasonSelect.value = presetStage === 'rejeitado' ? (st.rejection_category || '') : '';
+  } else {
+    choiceBox.hidden = false;
+    choiceBox.querySelectorAll('input[name="reject-type"]').forEach(r => { r.checked = false; });
+    reasonField.hidden = true;
+    reasonSelect.value = '';
+  }
+
+  overlay.classList.add('open');
+}
+
+/* ------------------------------------------------------------------------
+   MODAL: MARCAR COMO CONCLUÍDA
+   ------------------------------------------------------------------------ */
+
+let completeModalTargetId = null;
+
+function initCompleteModal() {
+  const overlay = document.getElementById('complete-modal-overlay');
+  const valorInput = document.getElementById('complete-valor-input');
+  const notesInput = document.getElementById('complete-notes-input');
+
+  document.getElementById('complete-modal-cancel').addEventListener('click', () => {
+    overlay.classList.remove('open');
+    completeModalTargetId = null;
+    refreshSidebarIfOpen(); // desfaz a troca visual do select do sidebar, se aberto
+  });
+
+  document.getElementById('complete-modal-confirm').addEventListener('click', () => {
+    const valor = parseFloat(String(valorInput.value).replace(',', '.'));
+    if (valorInput.value === '' || isNaN(valor) || valor < 0) {
+      valorInput.style.borderColor = '#d63b3b';
+      valorInput.focus();
+      return;
+    }
+    const notes = notesInput.value.trim();
+    const id = completeModalTargetId;
+    overlay.classList.remove('open');
+    completeModalTargetId = null;
+    if (id != null) completeSchool(id, valor, notes);
+  });
+}
+
+function openCompleteModal(id) {
+  const st = getState(id);
+  if (st.followup_stage !== 'visitado') {
+    alert('Só é possível concluir uma escola que já passou pela etapa "Visita Realizada".');
+    return;
+  }
+  completeModalTargetId = id;
+  const overlay = document.getElementById('complete-modal-overlay');
+  const valorInput = document.getElementById('complete-valor-input');
+  const notesInput = document.getElementById('complete-notes-input');
+  valorInput.style.borderColor = '';
+  valorInput.value = st.valor_pago != null ? String(st.valor_pago) : '';
+  notesInput.value = st.conclusion_notes || '';
+  overlay.classList.add('open');
 }
 
 /* ==========================================================================
@@ -756,7 +941,9 @@ function renderRejeitados() {
       <td>${s.nome}</td>
       <td>${s.municipio}</td>
       <td>${s.telefone || '—'}</td>
-      <td>${TERMINAL_LABELS[st.followup_stage]}${st.rejection_reason ? ' — ' + st.rejection_reason : ''}</td>
+      <td>${TERMINAL_LABELS[st.followup_stage]}</td>
+      <td>${st.rejection_category || '—'}</td>
+      <td>${st.rejection_notes || '—'}</td>
       <td>${date}</td>
       <td><button class="btn-reactivate" data-id="${s.codigo_inep}">Reativar</button></td>
     `;
@@ -775,16 +962,88 @@ function renderRejeitados() {
 }
 
 /* ==========================================================================
+   CONCLUÍDOS
+   ========================================================================== */
+
+function schoolsConcluded() {
+  return SCHOOLS.filter(s => getState(s.codigo_inep).followup_stage === CONCLUDED_STAGE);
+}
+
+function formatCurrencyBR(valor) {
+  const n = Number(valor);
+  if (!isFinite(n)) return '—';
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function renderConcluidos() {
+  const tbody = document.getElementById('concluidos-tbody');
+  tbody.innerHTML = '';
+  schoolsConcluded().forEach(s => {
+    const st = getState(s.codigo_inep);
+    const lastHist = (st.followup_history || []).slice(-1)[0];
+    const date = lastHist ? new Date(lastHist.ts).toLocaleString('pt-BR') : '—';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${s.nome}</td>
+      <td>${s.municipio}</td>
+      <td>${s.telefone || '—'}</td>
+      <td>${st.valor_pago != null ? 'R$ ' + formatCurrencyBR(st.valor_pago) : '—'}</td>
+      <td>${st.conclusion_notes || '—'}</td>
+      <td>${date}</td>
+      <td><button class="btn-reactivate" data-id="${s.codigo_inep}">Reverter</button></td>
+    `;
+    tr.querySelector('td:not(:last-child)').parentElement.addEventListener('click', (e) => {
+      if (e.target.classList.contains('btn-reactivate')) return;
+      openSidebar(s.codigo_inep);
+    });
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('.btn-reactivate').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      revertConclusion(Number(btn.dataset.id));
+    });
+  });
+}
+
+/* ==========================================================================
    SIDEBAR DE DETALHES
    ========================================================================== */
 
+let sidebarOpenId = null;
+
+function refreshSidebarIfOpen() {
+  if (sidebarOpenId != null && document.getElementById('sidebar-overlay').classList.contains('open')) {
+    openSidebar(sidebarOpenId);
+  }
+}
+
 function openSidebar(id) {
+  sidebarOpenId = id;
   const s = SCHOOLS_BY_ID[id];
   const st = getState(id);
   const overlay = document.getElementById('sidebar-overlay');
   const content = document.getElementById('sidebar-content');
 
   const historyHtml = renderHistoryList(st.followup_history, { deletable: true, schoolId: id });
+
+  const rejectionBlock = (st.followup_stage === 'rejeitado' || st.followup_stage === 'nao_respondeu') ? `
+    <hr>
+    <div class="info-label" style="margin-bottom:6px;">Detalhes da rejeição</div>
+    <div class="info-grid">
+      <div><div class="info-label">Motivo</div><div class="info-value">${st.rejection_category || '—'}</div></div>
+      <div class="full"><div class="info-label">Observações</div><div class="info-value">${st.rejection_notes || '—'}</div></div>
+    </div>
+  ` : '';
+
+  const conclusionBlock = st.followup_stage === CONCLUDED_STAGE ? `
+    <hr>
+    <div class="info-label" style="margin-bottom:6px;">Detalhes da conclusão</div>
+    <div class="info-grid">
+      <div><div class="info-label">Valor (R$)</div><div class="info-value">${st.valor_pago != null ? formatCurrencyBR(st.valor_pago) : '—'}</div></div>
+      <div class="full"><div class="info-label">Observações</div><div class="info-value">${st.conclusion_notes || '—'}</div></div>
+    </div>
+  ` : '';
 
   content.innerHTML = `
     <h2>${s.nome}</h2>
@@ -811,7 +1070,10 @@ function openSidebar(id) {
       <option value="" ${!st.followup_stage ? 'selected' : ''}>Sem follow-up iniciado</option>
       ${STAGES.map(stg => `<option value="${stg}" ${st.followup_stage === stg ? 'selected' : ''}>${STAGE_LABELS[stg]}</option>`).join('')}
       ${Object.keys(TERMINAL_LABELS).map(stg => `<option value="${stg}" ${st.followup_stage === stg ? 'selected' : ''}>${TERMINAL_LABELS[stg]}</option>`).join('')}
+      <option value="${CONCLUDED_STAGE}" ${st.followup_stage === CONCLUDED_STAGE ? 'selected' : ''}>${CONCLUDED_LABEL}</option>
     </select>
+    ${rejectionBlock}
+    ${conclusionBlock}
 
     <hr>
     <div class="info-label" style="margin-bottom:6px;">Notas internas</div>
@@ -826,14 +1088,21 @@ function openSidebar(id) {
   content.querySelector('#sidebar-contacted').addEventListener('change', (e) => markContacted(id, e.target.checked));
   content.querySelector('#sidebar-stage').addEventListener('change', (e) => {
     const val = e.target.value;
-    if (!val) { clearFollowup(id); openSidebar(id); return; }
+    if (!val) { clearFollowup(id); return; }
     if (val === 'rejeitado' || val === 'nao_respondeu') {
-      const reason = prompt('Motivo:', st.rejection_reason || '');
-      rejectSchool(id, val, reason || '');
-    } else {
-      moveStage(id, val);
+      openRejectModal(id, val);
+      return;
     }
-    openSidebar(id);
+    if (val === CONCLUDED_STAGE) {
+      if (st.followup_stage !== 'visitado') {
+        alert('Só é possível concluir uma escola que já passou pela etapa "Visita Realizada".');
+        openSidebar(id); // reverte o select pro valor real
+        return;
+      }
+      openCompleteModal(id);
+      return;
+    }
+    moveStage(id, val);
   });
   content.querySelector('#sidebar-save-notes').addEventListener('click', () => {
     setState(id, { notes: content.querySelector('#sidebar-notes').value });
@@ -844,10 +1113,7 @@ function openSidebar(id) {
       e.stopPropagation();
       const index = Number(btn.dataset.index);
       const ok = confirm('Excluir esta entrada do histórico? Essa ação não pode ser desfeita.');
-      if (ok) {
-        deleteHistoryEntry(id, index);
-        openSidebar(id);
-      }
+      if (ok) deleteHistoryEntry(id, index);
     });
   });
 
@@ -876,18 +1142,159 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 /* ==========================================================================
-   EXPORT / IMPORT
+   EXPORTAÇÕES CSV (uma por aba, cada uma com as colunas relevantes daquela base)
    ========================================================================== */
 
-document.getElementById('btn-export').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(LEADS_STATE, null, 2)], { type: 'application/json' });
+// Escapa um valor para uso seguro em CSV com delimitador ";" (padrão Excel PT-BR):
+// - envolve em aspas se contiver ";", aspas, quebra de linha, ou começar/terminar com espaço
+// - duplica aspas internas (RFC4180)
+function csvEscape(value) {
+  const s = (value === null || value === undefined) ? '' : String(value);
+  if (/[;"\n\r]/.test(s) || s !== s.trim()) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+// Gera e baixa um arquivo CSV. Usa ";" como delimitador (não "," ) e BOM UTF-8
+// no início, porque o Excel em PT-BR usa "," como separador decimal e só faz o
+// auto-split de colunas corretamente com ";"; sem o BOM, acentos vêm corrompidos.
+function downloadCSV(filename, headers, rows) {
+  const lines = [headers.map(csvEscape).join(';')];
+  rows.forEach(row => lines.push(row.map(csvEscape).join(';')));
+  const csvContent = '﻿' + lines.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `educa-bondinho-progresso-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-});
+}
+
+function todayStamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function geoSourceLabel(s) {
+  const map = {
+    exato: 'Exata',
+    geocodificado: 'Geocodificada',
+    aproximado_bairro: 'Aproximada (nível bairro)',
+    aproximado_zona: 'Aproximada (nível zona/região)',
+    aproximado_municipio: 'Aproximada (nível município)',
+  };
+  return map[s.geo_source] || s.geo_source || '—';
+}
+
+function stageAtualLabel(school) {
+  const st = getState(school.codigo_inep);
+  if (!st.followup_stage) return 'Sem contato';
+  return ALL_LABELS[st.followup_stage] || st.followup_stage;
+}
+
+// Concatena o histórico completo de contato em uma única célula (usado no export de Follow Up)
+function historyToCSVCell(history) {
+  const hist = history || [];
+  if (hist.length === 0) return '—';
+  return hist.map(h => {
+    const label = ALL_LABELS[h.stage] || h.stage;
+    const author = h.by ? ` (${h.by})` : '';
+    return `${new Date(h.ts).toLocaleString('pt-BR')} — ${label}${author}`;
+  }).join(' | ');
+}
+
+function exportMapaCSV() {
+  const headers = [
+    'Código INEP', 'Escola', 'Município', 'Região do Estado', 'Zona (Rio)',
+    'Modalidades de Ensino', 'Telefone', 'Endereço', 'Bairro',
+    'Latitude', 'Longitude', 'Precisão da Localização', 'Contactada', 'Etapa Atual',
+  ];
+  const rows = filteredMapa().map(s => {
+    const st = getState(s.codigo_inep);
+    return [
+      s.codigo_inep, s.nome, s.municipio, s.regiao_estado,
+      s.municipio === 'Rio de Janeiro' ? s.zona_rio : '—',
+      s.etapas.join(', '), s.telefone || '—', s.endereco || '—', s.bairro || '—',
+      s.lat != null ? String(s.lat).replace('.', ',') : '—',
+      s.lon != null ? String(s.lon).replace('.', ',') : '—',
+      geoSourceLabel(s), st.contacted ? 'Sim' : 'Não', stageAtualLabel(s),
+    ];
+  });
+  downloadCSV(`educa-bondinho-mapa-${todayStamp()}.csv`, headers, rows);
+}
+
+function exportLeadsCSV() {
+  const headers = [
+    'Código INEP', 'Escola', 'Município', 'Região do Estado', 'Zona (Rio)',
+    'Modalidades de Ensino', 'Telefone', 'Endereço', 'Bairro',
+    'Contactada', 'Status',
+  ];
+  const rows = filteredLeads().map(s => {
+    const st = getState(s.codigo_inep);
+    return [
+      s.codigo_inep, s.nome, s.municipio, s.regiao_estado,
+      s.municipio === 'Rio de Janeiro' ? s.zona_rio : '—',
+      s.etapas.join(', '), s.telefone || '—', s.endereco || '—', s.bairro || '—',
+      st.contacted ? 'Sim' : 'Não', stageAtualLabel(s),
+    ];
+  });
+  downloadCSV(`educa-bondinho-leads-${todayStamp()}.csv`, headers, rows);
+}
+
+function exportFollowupCSV() {
+  const headers = [
+    'Escola', 'Telefone', 'Município', 'Etapa Atual', 'Responsável',
+    'Data do Primeiro Contato', 'Data da Última Atualização', 'Histórico Completo', 'Notas Internas',
+  ];
+  const rows = schoolsInFollowup().map(s => {
+    const st = getState(s.codigo_inep);
+    const hist = st.followup_history || [];
+    const first = hist.length > 0 ? new Date(hist[0].ts).toLocaleString('pt-BR') : '—';
+    const lastUpdate = st.updated_at ? new Date(st.updated_at).toLocaleString('pt-BR') : '—';
+    return [
+      s.nome, s.telefone || '—', s.municipio, stageAtualLabel(s),
+      st.last_updated_by || '—', first, lastUpdate,
+      historyToCSVCell(hist), st.notes || '—',
+    ];
+  });
+  downloadCSV(`educa-bondinho-followup-${todayStamp()}.csv`, headers, rows);
+}
+
+function exportRejeitadosCSV() {
+  const headers = ['Escola', 'Telefone', 'Município', 'Status', 'Motivo', 'Observações', 'Data', 'Responsável'];
+  const rows = schoolsRejected().map(s => {
+    const st = getState(s.codigo_inep);
+    const lastHist = (st.followup_history || []).slice(-1)[0];
+    const date = lastHist ? new Date(lastHist.ts).toLocaleString('pt-BR') : '—';
+    return [
+      s.nome, s.telefone || '—', s.municipio, TERMINAL_LABELS[st.followup_stage] || '—',
+      st.rejection_category || '—', st.rejection_notes || '—', date, st.last_updated_by || '—',
+    ];
+  });
+  downloadCSV(`educa-bondinho-rejeitados-${todayStamp()}.csv`, headers, rows);
+}
+
+function exportConcluidosCSV() {
+  const headers = ['Escola', 'Telefone', 'Município', 'Valor (R$)', 'Observações', 'Data de Conclusão', 'Responsável'];
+  const rows = schoolsConcluded().map(s => {
+    const st = getState(s.codigo_inep);
+    const lastHist = (st.followup_history || []).slice(-1)[0];
+    const date = lastHist ? new Date(lastHist.ts).toLocaleString('pt-BR') : '—';
+    return [
+      s.nome, s.telefone || '—', s.municipio,
+      st.valor_pago != null ? formatCurrencyBR(st.valor_pago) : '—',
+      st.conclusion_notes || '—', date, st.last_updated_by || '—',
+    ];
+  });
+  downloadCSV(`educa-bondinho-concluidos-${todayStamp()}.csv`, headers, rows);
+}
+
+document.getElementById('btn-export-mapa').addEventListener('click', exportMapaCSV);
+document.getElementById('btn-export-leads').addEventListener('click', exportLeadsCSV);
+document.getElementById('btn-export-followup').addEventListener('click', exportFollowupCSV);
+document.getElementById('btn-export-rejeitados').addEventListener('click', exportRejeitadosCSV);
+document.getElementById('btn-export-concluidos').addEventListener('click', exportConcluidosCSV);
 
 
 /* ==========================================================================
@@ -899,10 +1306,14 @@ function refreshAll() {
   renderLeads();
   renderKanban();
   renderRejeitados();
+  renderConcluidos();
+  refreshSidebarIfOpen();
 }
 
 function init() {
   initNameModal();
+  initRejectModal();
+  initCompleteModal();
   initFirebase();
   initMap();
   buildMultiselect('modalidade-filter-mapa', selectedEtapasMapa, renderMap);
