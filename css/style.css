@@ -134,11 +134,22 @@ button, input, select, textarea {
   min-height: 64px; resize: vertical;
 }
 .name-modal textarea:focus { outline: none; border-color: var(--primary); }
+#reject-modal-overlay .name-modal { width: 420px; }
 .reject-modal-choice {
-  display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; padding: 10px;
-  border: 1px solid var(--border); border-radius: var(--radius-sm); transition: outline .1s;
+  display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px;
+  border-radius: var(--radius-sm); transition: outline .1s; outline-offset: 4px;
 }
-.reject-modal-choice .check-row { font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.reject-modal-choice .check-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  font-size: 13px; font-weight: 500; line-height: 1.5; cursor: pointer;
+  padding: 13px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  transition: border-color .15s, background .15s;
+}
+.reject-modal-choice .check-row:hover { border-color: var(--primary-softer); background: var(--primary-light); }
+.reject-modal-choice .check-row:has(input:checked) { border-color: var(--primary); background: var(--primary-light); }
+.reject-modal-choice .check-row input[type="radio"] {
+  flex-shrink: 0; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--primary); cursor: pointer;
+}
 
 /* ===================== LAYOUT ===================== */
 main { height: calc(100vh - 92px); }
@@ -399,16 +410,19 @@ main { height: calc(100vh - 92px); }
 .kanban-card:active { cursor: grabbing; }
 .kanban-card h5 { margin: 0 0 6px; font-size: 13px; color: var(--ink); font-weight: 600; }
 .kanban-card .kc-meta { color: var(--muted); font-size: 11px; margin-bottom: 10px; }
-.kanban-card .kc-actions { display: flex; gap: 6px; margin-top: 6px; }
-.kanban-card .kc-actions select { flex: 1; font-size: 11px; padding: 6px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); }
+.kanban-card .kc-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.kanban-card .kc-actions select { width: 100%; font-size: 11px; padding: 7px 8px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); }
+.kanban-card .kc-buttons { display: flex; gap: 8px; }
+.kanban-card .kc-reject, .kanban-card .kc-complete {
+  flex: 1; border-radius: 7px; font-size: 11.5px; padding: 7px 9px; cursor: pointer;
+  font-weight: 500; white-space: nowrap;
+}
 .kanban-card .kc-reject {
-  background: none; border: 1px solid var(--border); color: var(--danger); border-radius: 7px;
-  font-size: 12px; padding: 5px 9px; cursor: pointer;
+  background: none; border: 1px solid var(--border); color: var(--danger);
 }
 .kanban-card .kc-reject:hover { background: #fdeceb; border-color: var(--danger); }
 .kanban-card .kc-complete {
-  background: none; border: 1px solid var(--border); color: var(--success); border-radius: 7px;
-  font-size: 11px; padding: 5px 9px; cursor: pointer; flex: 1;
+  background: none; border: 1px solid var(--border); color: var(--success);
 }
 .kanban-card .kc-complete:hover { background: #e6f4ea; border-color: var(--success); }
 .kanban-card .kc-history-toggle {
