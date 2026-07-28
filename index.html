@@ -31,11 +31,11 @@
     <button class="tab-btn" data-tab="leads">Leads</button>
     <button class="tab-btn" data-tab="followup">Follow Up</button>
     <button class="tab-btn" data-tab="rejeitados">Rejeitados / Sem Resposta</button>
+    <button class="tab-btn" data-tab="concluidos">Concluídos</button>
   </nav>
   <div class="header-right">
     <button id="current-user-badge" class="user-badge" title="Clique para trocar de usuário"></button>
     <span class="sync-status" id="sync-status" title="Status de sincronização">● local</span>
-    <button id="btn-export" class="btn-ghost" title="Exportar progresso (checks e follow-up) em arquivo JSON">⬇ Exportar</button>
   </div>
 </header>
 
@@ -78,6 +78,10 @@
       </div>
 
       <div class="filter-group stats" id="mapa-stats"></div>
+
+      <div class="filter-group filter-export">
+        <button id="btn-export-mapa" class="btn-export" title="Exportar em CSV as escolas visíveis nesta visualização">⬇ Exportar CSV</button>
+      </div>
     </aside>
 
     <div class="map-wrap">
@@ -127,6 +131,10 @@
       </div>
 
       <div class="filter-group stats" id="leads-stats"></div>
+
+      <div class="filter-group filter-export">
+        <button id="btn-export-leads" class="btn-export" title="Exportar em CSV as escolas visíveis nesta lista">⬇ Exportar CSV</button>
+      </div>
     </aside>
 
     <div class="leads-list-wrap">
@@ -153,6 +161,7 @@
       <div class="followup-search">
         <input type="text" id="search-followup" placeholder="Buscar escola no funil...">
       </div>
+      <button id="btn-export-followup" class="btn-export" title="Exportar em CSV o funil de follow-up">⬇ Exportar CSV</button>
     </div>
     <div class="kanban" id="kanban-board"></div>
   </section>
@@ -161,6 +170,7 @@
   <section class="tab-panel" id="panel-rejeitados">
     <div class="rejeitados-header">
       <p>Escolas que não responderam ou recusaram a proposta. Você pode reativar uma escola para reiniciar o follow-up.</p>
+      <button id="btn-export-rejeitados" class="btn-export" title="Exportar em CSV as escolas rejeitadas/sem resposta">⬇ Exportar CSV</button>
     </div>
     <table class="leads-table">
       <thead>
@@ -168,12 +178,36 @@
           <th>Escola</th>
           <th>Município</th>
           <th>Telefone</th>
+          <th>Status</th>
           <th>Motivo</th>
+          <th>Observações</th>
           <th>Data</th>
           <th></th>
         </tr>
       </thead>
       <tbody id="rejeitados-tbody"></tbody>
+    </table>
+  </section>
+
+  <!-- ===================== CONCLUÍDOS ===================== -->
+  <section class="tab-panel" id="panel-concluidos">
+    <div class="concluidos-header">
+      <p>Escolas com visita realizada e pagamento processado.</p>
+      <button id="btn-export-concluidos" class="btn-export" title="Exportar em CSV as escolas concluídas">⬇ Exportar CSV</button>
+    </div>
+    <table class="leads-table">
+      <thead>
+        <tr>
+          <th>Escola</th>
+          <th>Município</th>
+          <th>Telefone</th>
+          <th>Valor (R$)</th>
+          <th>Observações</th>
+          <th>Data</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="concluidos-tbody"></tbody>
     </table>
   </section>
 
@@ -199,6 +233,41 @@
     <div class="name-modal-actions">
       <button class="btn-ghost-light" id="name-modal-skip" hidden>Cancelar</button>
       <button class="btn-primary" id="name-modal-confirm">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: REJEITAR / SEM RESPOSTA ===================== -->
+<div class="name-modal-overlay" id="reject-modal-overlay">
+  <div class="name-modal">
+    <h3>Marcar escola</h3>
+    <div class="reject-modal-choice" id="reject-modal-choice">
+      <label class="check-row"><input type="radio" name="reject-type" value="rejeitado"> A escola respondeu e recusou a proposta</label>
+      <label class="check-row"><input type="radio" name="reject-type" value="nao_respondeu"> Não respondeu / sem retorno</label>
+    </div>
+    <div id="reject-reason-field" hidden>
+      <select id="reject-reason-select">
+        <option value="">Selecione o motivo...</option>
+      </select>
+    </div>
+    <textarea id="reject-notes-input" placeholder="Observações (opcional)..."></textarea>
+    <div class="name-modal-actions">
+      <button class="btn-ghost-light" id="reject-modal-cancel">Cancelar</button>
+      <button class="btn-primary" id="reject-modal-confirm">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: MARCAR COMO CONCLUÍDA ===================== -->
+<div class="name-modal-overlay" id="complete-modal-overlay">
+  <div class="name-modal">
+    <h3>Marcar como concluída</h3>
+    <p>Escola com visita realizada e pagamento processado.</p>
+    <input type="number" id="complete-valor-input" step="0.01" min="0" placeholder="Valor (R$)">
+    <textarea id="complete-notes-input" placeholder="Observações (opcional)..."></textarea>
+    <div class="name-modal-actions">
+      <button class="btn-ghost-light" id="complete-modal-cancel">Cancelar</button>
+      <button class="btn-primary" id="complete-modal-confirm">Confirmar</button>
     </div>
   </div>
 </div>
