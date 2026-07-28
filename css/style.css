@@ -134,6 +134,11 @@ button, input, select, textarea {
   min-height: 64px; resize: vertical;
 }
 .name-modal textarea:focus { outline: none; border-color: var(--primary); }
+.name-modal input[type="date"] { cursor: pointer; }
+.modal-field-label {
+  display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); font-weight: 600; margin: 0 0 6px;
+}
 #reject-modal-overlay .name-modal { width: 420px; }
 .reject-modal-choice {
   display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px;
@@ -410,6 +415,21 @@ main { height: calc(100vh - 92px); }
 .kanban-card:active { cursor: grabbing; }
 .kanban-card h5 { margin: 0 0 6px; font-size: 13px; color: var(--ink); font-weight: 600; }
 .kanban-card .kc-meta { color: var(--muted); font-size: 11px; margin-bottom: 10px; }
+.kanban-card .kc-scheduled {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 11px; color: var(--primary-dark); font-weight: 600;
+  background: var(--primary-light); border-radius: 7px; padding: 6px 9px; margin-bottom: 10px;
+}
+.kanban-card .kc-reschedule {
+  background: none; border: none; color: var(--muted); font-size: 10.5px; font-weight: 500;
+  cursor: pointer; text-decoration: underline; padding: 0;
+}
+.kanban-card .kc-reschedule:hover { color: var(--primary-dark); }
+.sidebar .schedule-inline-edit {
+  background: none; border: none; color: var(--primary-dark); font-size: 11.5px; font-weight: 600;
+  cursor: pointer; text-decoration: underline; padding: 0; margin-top: 4px;
+}
+.sidebar .schedule-inline-edit:hover { color: var(--primary); }
 .kanban-card .kc-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .kanban-card .kc-actions select { width: 100%; font-size: 11px; padding: 7px 8px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); }
 .kanban-card .kc-buttons { display: flex; gap: 8px; }
@@ -448,6 +468,13 @@ main { height: calc(100vh - 92px); }
 }
 .btn-reactivate:hover { background: var(--primary-light); }
 #panel-rejeitados .leads-table, #panel-concluidos .leads-table { border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); }
+
+/* ===================== AGENDA ===================== */
+#panel-agenda { flex-direction: column; padding: 24px 28px; overflow-y: auto; background: var(--bg); }
+.agenda-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 4px; }
+.agenda-header p { font-size: 13px; color: var(--muted); margin: 0 0 16px; max-width: 620px; line-height: 1.5; }
+#panel-agenda .leads-table { border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); }
+.agenda-date-cell { font-weight: 600; color: var(--primary-dark); white-space: nowrap; }
 
 /* ===================== CONCLUÍDOS ===================== */
 #panel-concluidos { flex-direction: column; padding: 24px 28px; overflow-y: auto; background: var(--bg); }
